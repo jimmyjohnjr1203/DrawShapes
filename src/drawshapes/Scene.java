@@ -2,12 +2,17 @@ package drawshapes;
 
 
 
+import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Point;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Scanner;
 
 /**
  * A scene of shapes.  Uses the Model-View-Controller (MVC) design pattern,
@@ -28,6 +33,16 @@ public class Scene implements Iterable<IShape>
     private SelectionRectangle selectRect;
     private boolean isDrag;
     private Point startDrag;
+
+    public Scene copy(){
+        Scene returnVal = new Scene();
+        //copy over all of the data, including making copies of shapes
+        for (IShape shape: this.shapeList){
+            returnVal.shapeList.add(shape.copy());
+        }
+
+        return returnVal;
+    }
     
     public void updateSelectRect(Point drag) {
         for (IShape s : this){
@@ -121,6 +136,21 @@ public class Scene implements Iterable<IShape>
     }
     
     /**
+     * Return a list of shapes in the scene that are selected
+     * @return A list of shapes that have been selected.
+     */
+    public List<IShape> selected()
+    {
+        List<IShape> selected = new LinkedList<IShape>();
+        for (IShape s : shapeList){
+            if (s.isSelected()){
+                selected.add(s);
+            }
+        }
+        return selected;
+    }
+    
+    /**
      * Add a shape to the scene.  It will be rendered next time
      * the draw() method is invoked.
      * @param s
@@ -145,5 +175,102 @@ public class Scene implements Iterable<IShape>
         }
         return shapeText;
     }
+
+    public static Scene loadFromFile(File file) throws IOException { //can't fix IO exception here
+        Scene scene = new Scene();
+        Scanner scan = new Scanner(new FileInputStream(file));
+
+        while (scan.hasNext()){
+            String shapeName = scan.next();
+            IShape shape;
+            if (shapeName.equalsIgnoreCase("SQUARE")){
+                //read square
+                int x = scan.nextInt();
+                int y = scan.nextInt();
+                int side = scan.nextInt();
+                Color color = Util.stringToColor(scan.next());
+                boolean selected = scan.nextBoolean();
+                shape = new Square(color, x, y, side);
+                shape.setSelected(selected);
+            } else if (shapeName.equalsIgnoreCase("RECTANGLE")){
+                //read rectangle
+                int x = scan.nextInt();
+                int y = scan.nextInt();
+                int width = scan.nextInt();
+                int height = scan.nextInt();
+                Color color = Util.stringToColor(scan.next());
+                boolean selected = scan.nextBoolean();
+                shape = new Rectangle(x, x+width, y, y+height, color);
+                shape.setSelected(selected);
+            } else if (shapeName.equalsIgnoreCase("CIRCLE")){
+                //read circle
+                int x = scan.nextInt();
+                int y = scan.nextInt();
+                int diameter = scan.nextInt();
+                Color color = Util.stringToColor(scan.next());
+                boolean selected = scan.nextBoolean();
+                shape = new Circle(color, new Point(x, y), diameter);
+                shape.setSelected(selected);
+            } else {
+                scan.close();
+                throw new IOException("Unknown Shape Type");
+            }
+            //if (line.strip().equals("")) continue; //it was an empty line, skip it
+
+            //add shape to scene
+            scene.addShape(shape);
+        }
+        scan.close();
+        return scene;
+    }
+
+    public void moveSelected(int x, int y) {
+        // for each shape that is selected, move x and y
+        for (IShape shape : this.selected()) {
+            shape.move(x, y);
+        }
+    }
+
+    public void scaleUpSelected() {
+        // for each shape that is selected, scale up
+        for (IShape shape : this.selected()) {
+            shape.scaleUp();
+        }
+    }
+
+    public void scaleDownSelected() {
+        // for each shape that is selected, scale down
+        for (IShape shape : this.selected()) {
+            shape.scaleDown();
+        }
+    }
+
+    //take the selected shapes and move them down in the drawing order (later shapes are drawn on top)
+    public void liftSelected(){
+        //take the shapes that are selected and move each one back in the list, starting from the back
+        for(int i=shapeList.size()-2; i>=0; i--){
+            //start at shapeList.size()-2 because you can't move back the last shape
+            IShape shape = shapeList.get(i);
+            if (shape.isSelected()){
+                //remove shape, then add it one spot later
+                shapeList.remove(i);
+                shapeList.add(i+1, shape);
+            }
+        }
+    }
+    //take the selected shapes and move them up in the drawing order (earlier shapes are drawn on bottom)
+    public void deepenSelected(){
+        //take the shapes that are selected and move each one forward in the list, starting from the front
+        for(int i=1; i<shapeList.size(); i++){
+            //start at 1 because you can't move forward the first shape
+            IShape shape = shapeList.get(i);
+            if (shape.isSelected()){
+                //remove shape, then add it one spot earlier
+                shapeList.remove(i);
+                shapeList.add(i-1, shape);
+            }
+        }
+    }
+
     
 }

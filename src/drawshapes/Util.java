@@ -8,7 +8,7 @@ import java.awt.Color;
  * and so on.
  * 
  * This class contains static utility methods. It doesn't
- * make sene to create instances of this class.
+ * make sense to create instances of this class.
  */
 public class Util
 {
@@ -20,6 +20,10 @@ public class Util
             return "RED";
         } else if (color == Color.BLUE) {
             return "BLUE";
+        } else if (color == Color.GREEN){
+            return "GREEN";
+        } else if (color == Color.MAGENTA){
+            return "MAGENTA";
         }
         throw new UnsupportedOperationException("Unexpected color: "+color);
     }
@@ -29,6 +33,10 @@ public class Util
             return Color.RED;
         } else if (color.equals("BLUE")) {
             return Color.BLUE;
+        } else if (color.equals("GREEN")){
+            return Color.GREEN;
+        } else if (color.equals("MAGENTA")){
+            return Color.MAGENTA;
         }
         throw new UnsupportedOperationException("Unexpected color: "+color);
     }

@@ -15,14 +15,20 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.List;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.concurrent.LinkedBlockingDeque;
 
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 
 @SuppressWarnings("serial")
 public class DrawShapes extends JFrame
@@ -33,12 +39,21 @@ public class DrawShapes extends JFrame
         RECTANGLE
     }
     
+    // what operations can be done on shapes?
+    public enum OperationState {
+        MOVE,
+        SCALE,
+        DEPTH //change the order that the shapes are drawn
+    }
+    
     private DrawShapesPanel shapePanel;
     private Scene scene;
     private ShapeType shapeType = ShapeType.SQUARE;
+    private OperationState activeOperation = null; //what operation is active? (will be affected by arrow keys)
     private Color color = Color.RED;
-    private Point startDrag;
 
+    //list of previous scenes, to be lengthened as operations happen, undo removes the most recent addition
+    private Deque<Scene> history =new LinkedList<Scene>();
 
     public DrawShapes(int width, int height)
     {
@@ -51,6 +66,8 @@ public class DrawShapes extends JFrame
         this.setResizable(false);
         this.pack();
         this.setLocation(100,100);
+        //initialize history to an empty scene (so you can undo the first action)
+        cacheScene();
         
         // Add key and mouse listeners to our canvas
         initializeMouseListener();
@@ -66,6 +83,28 @@ public class DrawShapes extends JFrame
             }
         });
     }
+    /** Should be called to update the scene (don't change scene var directly)
+     * 
+     * @return 
+     */
+    private void updateScene(Scene scene){
+        this.scene = scene;
+        shapePanel.setScene(scene);
+        repaint(); //the scene has changed, it needs to be shown
+    }
+
+
+    /** Should be called whenever an action is taken, will save the previous Scene to the history stack
+     * 
+     * @return 
+     */
+    private void cacheScene(){
+        history.addFirst(scene); //store the current scene
+        System.out.println("This scene was stored then a copy was made");
+        System.out.println(scene);
+        //make a copy of scene to be changed by further edits
+        updateScene(scene.copy());
+    }
     
     private void initializeMouseListener()
     {
@@ -73,9 +112,10 @@ public class DrawShapes extends JFrame
             
             public void mouseClicked(MouseEvent e)
             {
-                System.out.printf("Mouse cliked at (%d, %d)\n", e.getX(), e.getY());
+                System.out.printf("Mouse clicked at (%d, %d)\n", e.getX(), e.getY());
                 
                 if (e.getButton()==MouseEvent.BUTTON1) { 
+                    cacheScene(); //adding shapes can be undone
                     if (shapeType == ShapeType.SQUARE) {
                         scene.addShape(new Square(color, 
                                 e.getX(), 
@@ -88,11 +128,10 @@ public class DrawShapes extends JFrame
                     } else if (shapeType == ShapeType.RECTANGLE) {
                         scene.addShape(new Rectangle(
                                 e.getPoint(),
-                                100, 
-                                200,
+                                150, 
+                                100,
                                 color));
-                    }
-                    
+                    } 
                 } else if (e.getButton()==MouseEvent.BUTTON2) {
                     // apparently this is middle click
                 } else if (e.getButton()==MouseEvent.BUTTON3){
@@ -142,8 +181,20 @@ public class DrawShapes extends JFrame
             }
 
             @Override
-            public void mouseWheelMoved(MouseWheelEvent e) {
-                // TODO use this to grow/shrink shapes
+            public void mouseWheelMoved(MouseWheelEvent e) { //mouse scrolls dont work on touchpad T_T
+                System.out.printf("mouse scrolled! (%d)\n", e.getWheelRotation());
+                if (e.getWheelRotation() > 0){
+                    cacheScene();
+                    for (IShape shape : scene.selected()) {
+                        shape.scaleUp();
+                    }
+                } else if (e.getWheelRotation() < 0){
+                    cacheScene();
+                    for (IShape shape : scene.selected()) {
+                        shape.scaleDown();
+                    }
+                }
+
             }
             
         };
@@ -168,7 +219,6 @@ public class DrawShapes extends JFrame
         loadItem.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                // TODO Auto-generated method stub
                 System.out.println(e.getActionCommand());
                 JFileChooser jfc = new JFileChooser(".");
 
@@ -177,8 +227,12 @@ public class DrawShapes extends JFrame
                 if (returnValue == JFileChooser.APPROVE_OPTION) {
                     File selectedFile = jfc.getSelectedFile();
                     System.out.println("load from " +selectedFile.getAbsolutePath());
-                    //TODO: load scene from file
-                    
+                    //load from file
+                    try {
+                        updateScene(Scene.loadFromFile(selectedFile));
+                    } catch (Exception exc){
+                        JOptionPane.showMessageDialog(null, exc);
+                    }
                 }
             }
         });
@@ -188,7 +242,6 @@ public class DrawShapes extends JFrame
         saveItem.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                // TODO Auto-generated method stub
                 System.out.println(e.getActionCommand());
                 JFileChooser jfc = new JFileChooser(".");
 
@@ -198,7 +251,13 @@ public class DrawShapes extends JFrame
                 if (returnValue == JFileChooser.APPROVE_OPTION) {
                     File selectedFile = jfc.getSelectedFile();
                     System.out.println("save to " +selectedFile.getAbsolutePath());
-                    //TODO: save scene to file
+                    String stringScene = scene.toString();
+                    try (PrintWriter out = new PrintWriter(selectedFile)){
+                        out.println(stringScene);
+                    } catch (FileNotFoundException exc){
+                        //TODO: tell the user that was a bad file (with an error window)
+                        JOptionPane.showMessageDialog(null, exc.toString() + "\n Pick a different file");
+                    }
                     
                 }
             }
@@ -244,6 +303,30 @@ public class DrawShapes extends JFrame
             }
         });
         
+        // green color
+        JMenuItem greenColorItem = new JMenuItem ("Green");
+        colorMenu.add(greenColorItem);
+        greenColorItem.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String text=e.getActionCommand();
+                System.out.println(text);
+                // change the color instance variable to green
+                color = Color.GREEN;
+            }
+        });
+        
+        // purple color
+        JMenuItem purpleColorItem = new JMenuItem ("Purple");
+        colorMenu.add(purpleColorItem);
+        purpleColorItem.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String text=e.getActionCommand();
+                System.out.println(text);
+                // change the color instance variable to purple
+                color = Color.MAGENTA; //need to add this to the list of colors for the colorToString stuff to work in Util
+            }
+        });
+        
         // shape menu
         JMenu shapeMenu = new JMenu("Shape");
         menuBar.add(shapeMenu);
@@ -256,6 +339,16 @@ public class DrawShapes extends JFrame
             public void actionPerformed(ActionEvent e) {
                 System.out.println("Square");
                 shapeType = ShapeType.SQUARE;
+            }
+        });
+        //rectangle
+        JMenuItem rectangleItem = new JMenuItem("Rectangle");
+        shapeMenu.add(rectangleItem);
+        rectangleItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                System.out.println("Rectangle");
+                shapeType = ShapeType.RECTANGLE;
             }
         });
         
@@ -280,8 +373,8 @@ public class DrawShapes extends JFrame
         operationModeMenu.add(drawItem);
         drawItem.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                String text=e.getActionCommand();
-                System.out.println(text);
+                activeOperation = OperationState.SCALE;
+                System.out.println("Shape can be resized with up and down key");
             }
         });
         
@@ -290,8 +383,28 @@ public class DrawShapes extends JFrame
         operationModeMenu.add(selectItem);
         selectItem.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                String text=e.getActionCommand();
-                System.out.println(text);
+                activeOperation = OperationState.MOVE;
+                System.out.println("Shape can be moved with arrow keys");
+            }
+        });
+
+        // select option
+        JMenuItem depthItem=new JMenuItem("Depth");
+        operationModeMenu.add(depthItem);
+        depthItem.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                activeOperation = OperationState.DEPTH;
+                System.out.println("Shape drawing order can be changed with arrow keys");
+            }
+        });
+        
+        // select option
+        JMenuItem blankItem=new JMenuItem("None");
+        operationModeMenu.add(blankItem);
+        blankItem.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                activeOperation = null;
+                System.out.println("No shape operations will be performed");
             }
         });
         
@@ -307,8 +420,58 @@ public class DrawShapes extends JFrame
     {
         shapePanel.addKeyListener(new KeyListener() {
             public void keyPressed(KeyEvent e) {
-                System.out.println("key typed: " +e.getKeyChar());
-            }
+                int keyCode = e.getKeyCode();
+                if (activeOperation == OperationState.MOVE && !scene.selected().isEmpty()) { //don't try and move anything if nothing is selected
+                    
+                    if (keyCode == KeyEvent.VK_UP) {
+                        cacheScene(); //moves can be undone
+                        scene.moveSelected(0,-5);
+                        System.out.println("Moved shapes up");
+                    } else if (keyCode == KeyEvent.VK_LEFT) {
+                        cacheScene(); //moves can be undone
+                        scene.moveSelected(-5,0);
+                        System.out.println("Moved shapes left");
+                    } else if (keyCode == KeyEvent.VK_RIGHT) {
+                        cacheScene(); //moves can be undone
+                        scene.moveSelected(5,0);
+                        System.out.println("Moved shapes right");
+                    } else if (keyCode == KeyEvent.VK_DOWN) {
+                        cacheScene(); //moves can be undone
+                        scene.moveSelected(0,5);
+                        System.out.println("Moved shapes down");
+                    }
+                } else if (activeOperation == OperationState.SCALE && !scene.selected().isEmpty()){
+                    if (keyCode == KeyEvent.VK_UP){
+                        cacheScene(); //scaling can be undone
+                        scene.scaleUpSelected();
+                    } else if (keyCode == KeyEvent.VK_DOWN){
+                        cacheScene(); //scaling can be undone
+                        scene.scaleDownSelected();
+                    }
+                } else if (activeOperation == OperationState.DEPTH && !scene.selected().isEmpty()){
+                    if (keyCode == KeyEvent.VK_UP){
+                        cacheScene(); //deepening can be undone
+                        scene.deepenSelected();
+                    } else if (keyCode == KeyEvent.VK_DOWN){
+                        cacheScene(); //lifting can be undone
+                        scene.liftSelected();
+                    }
+                }
+
+            
+                //need to update scene
+                repaint();
+
+                //check for ctrl + z i.e. undo
+                if (keyCode == KeyEvent.VK_Z && e.isControlDown()) {// if both ctrl and z are down
+                    if(history.peek() != null) {
+                        updateScene(history.removeFirst()); //take off the first item (which is the previous state)
+                        System.out.println("Action undone! Now displaying scene:");
+                        System.out.println(scene);
+                    }
+                    else System.out.println("No more actions to undo");
+                }
+            } 
             public void keyReleased(KeyEvent e){
                 // TODO: implement this method if you need it
             }

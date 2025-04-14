@@ -90,13 +90,15 @@ public abstract class AbstractShape implements IShape
     public Point getAnchorPoint() {
         return this.anchorPoint;
     }
+
     
-    static String colorToString(Color color) {
-        if (color == Color.RED) {
-            return "RED";
-        } else if (color == Color.BLUE) {
-            return "BLUE";
-        }
-        throw new UnsupportedOperationException("Unexpected color: "+color);
+    // Fun Stuff!
+    
+    @Override
+    public void move(int x, int y){
+        //update the anchor point moving in the x and y directions
+        this.setAnchorPoint(new Point(this.getAnchorPoint().x + x, this.getAnchorPoint().y + y));
+        //setAnchorPoint needs to be implemented by the actual shapes
     }
+
 }
