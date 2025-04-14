@@ -16,8 +16,6 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.PrintWriter;
 import java.util.List;
-import java.util.Deque;
-import java.util.LinkedList;
 
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -43,21 +41,15 @@ public class DrawShapes extends JFrame
     }
     
     private DrawShapesPanel shapePanel;
-    private Scene scene;
+    private SceneViewer scene;
     private ShapeType shapeType = ShapeType.SQUARE;
     private OperationState activeOperation = null; //what operation is active? (will be affected by arrow keys)
     private Color color = Color.RED;
 
-    //list of previous scenes, to be lengthened as operations happen, undo removes the most recent addition
-    // Java says use Deques instead of stacks?
-    private Deque<Scene> undoStack = new LinkedList<Scene>(); 
-    // stack with all the scenes that have just been undone
-    private Deque<Scene> redoStack = new LinkedList<Scene>();
-
     public DrawShapes(int width, int height)
     {
         setTitle("Draw Shapes!");
-        scene=new Scene();
+        scene = SceneViewer.getSceneViewer(); //only one scene viewer can exist
         
         // create our canvas, add to this frame's content pane
         shapePanel = new DrawShapesPanel(width,height,scene);
@@ -65,8 +57,6 @@ public class DrawShapes extends JFrame
         this.setResizable(false);
         this.pack();
         this.setLocation(100,100);
-        //initialize undoStack to an empty scene (so you can undo the first action)
-        cacheScene();
         
         // Add key and mouse listeners to our canvas
         initializeMouseListener();
@@ -82,61 +72,6 @@ public class DrawShapes extends JFrame
             }
         });
     }
-    /** Should be called to update the scene (don't change scene var directly)
-     * 
-     * @return 
-     */
-    private void updateScene(Scene scene){
-        this.scene = scene;
-        shapePanel.setScene(scene);
-        repaint(); //the scene has changed, it needs to be shown
-    }
-
-
-    /** Should be called whenever an action is taken, will save the previous Scene to the undoStack
-     * Will also clear the redoStack (can't redo after doing something else)
-     * 
-     * @return 
-     */
-    private void cacheScene(){
-        undoStack.addFirst(scene); //store the current scene
-        System.out.println("This scene was stored then a copy was made");
-        System.out.println(scene);
-        //make a copy of scene to be changed by further edits
-        updateScene(scene.copy());
-        //clear the redo stack, can't redo after doing something else
-        if (!redoStack.isEmpty()) redoStack.clear();
-    }
-
-    /** Undo a previous operation
-     * 
-     * @return 
-     */
-    private void undo(){
-        if(undoStack.peek() != null) {
-            //add removed scene to the redo stack
-            redoStack.addFirst(scene);
-            updateScene(undoStack.removeFirst()); //take off the first item (which is the previous state)
-            System.out.println("Action undone! Now displaying scene:");
-            System.out.println(scene);
-        }
-        else System.out.println("No more actions to undo");
-    }
-    
-    /** Redo a previous operation
-     * 
-     * @return 
-     */
-    private void redo(){
-        if(redoStack.peek() != null) {
-            //add removed scene to the undo stack
-            undoStack.addFirst(scene);
-            updateScene(redoStack.removeFirst()); //take off the first item (which is the previous state)
-            System.out.println("Action redone! Now displaying scene:");
-            System.out.println(scene);
-        }
-        else System.out.println("No more actions to redo");
-    }
 
 
     
@@ -149,7 +84,6 @@ public class DrawShapes extends JFrame
                 System.out.printf("Mouse clicked at (%d, %d)\n", e.getX(), e.getY());
                 
                 if (e.getButton()==MouseEvent.BUTTON1) { 
-                    cacheScene(); //adding shapes can be undone
                     if (shapeType == ShapeType.SQUARE) {
                         scene.addShape(new Square(color, 
                                 e.getX(), 
@@ -218,15 +152,9 @@ public class DrawShapes extends JFrame
             public void mouseWheelMoved(MouseWheelEvent e) { //mouse scrolls dont work on touchpad T_T
                 System.out.printf("mouse scrolled! (%d)\n", e.getWheelRotation());
                 if (e.getWheelRotation() > 0){
-                    cacheScene();
-                    for (IShape shape : scene.selected()) {
-                        shape.scaleUp();
-                    }
+                    scene.scaleUpSelected();
                 } else if (e.getWheelRotation() < 0){
-                    cacheScene();
-                    for (IShape shape : scene.selected()) {
-                        shape.scaleDown();
-                    }
+                    scene.scaleDownSelected();
                 }
 
             }
@@ -263,7 +191,8 @@ public class DrawShapes extends JFrame
                     System.out.println("load from " +selectedFile.getAbsolutePath());
                     //load from file
                     try {
-                        updateScene(Scene.loadFromFile(selectedFile));
+                        scene.load(selectedFile);
+                        repaint();
                     } catch (Exception exc){
                         JOptionPane.showMessageDialog(null, exc);
                     }
@@ -289,7 +218,6 @@ public class DrawShapes extends JFrame
                     try (PrintWriter out = new PrintWriter(selectedFile)){
                         out.println(stringScene);
                     } catch (FileNotFoundException exc){
-                        //TODO: tell the user that was a bad file (with an error window)
                         JOptionPane.showMessageDialog(null, exc.toString() + "\n Pick a different file");
                     }
                     
@@ -458,52 +386,45 @@ public class DrawShapes extends JFrame
                 if (activeOperation == OperationState.MOVE && !scene.selected().isEmpty()) { //don't try and move anything if nothing is selected
                     
                     if (keyCode == KeyEvent.VK_UP) {
-                        cacheScene(); //moves can be undone
                         scene.moveSelected(0,-5);
                         System.out.println("Moved shapes up");
                     } else if (keyCode == KeyEvent.VK_LEFT) {
-                        cacheScene(); //moves can be undone
                         scene.moveSelected(-5,0);
                         System.out.println("Moved shapes left");
                     } else if (keyCode == KeyEvent.VK_RIGHT) {
-                        cacheScene(); //moves can be undone
                         scene.moveSelected(5,0);
                         System.out.println("Moved shapes right");
                     } else if (keyCode == KeyEvent.VK_DOWN) {
-                        cacheScene(); //moves can be undone
                         scene.moveSelected(0,5);
                         System.out.println("Moved shapes down");
                     }
                 } else if (activeOperation == OperationState.SCALE && !scene.selected().isEmpty()){
                     if (keyCode == KeyEvent.VK_UP){
-                        cacheScene(); //scaling can be undone
                         scene.scaleUpSelected();
                     } else if (keyCode == KeyEvent.VK_DOWN){
-                        cacheScene(); //scaling can be undone
                         scene.scaleDownSelected();
                     }
                 } else if (activeOperation == OperationState.DEPTH && !scene.selected().isEmpty()){
                     if (keyCode == KeyEvent.VK_UP){
-                        cacheScene(); //deepening can be undone
                         scene.deepenSelected();
                     } else if (keyCode == KeyEvent.VK_DOWN){
-                        cacheScene(); //lifting can be undone
                         scene.liftSelected();
                     }
                 }
 
             
-                //need to update scene
-                repaint();
 
                 //check for ctrl + z i.e. undo
                 if (keyCode == KeyEvent.VK_Z && e.isControlDown()) {// if both ctrl and z are down
-                    undo();
+                    scene.undo();
                 }
                 //check for ctrl + y i.e. undo
                 if (keyCode == KeyEvent.VK_Y && e.isControlDown()) {// if both ctrl and y are down
-                    redo();
+                    scene.redo();
                 }
+                
+                //need to update scene
+                repaint();
             } 
             public void keyReleased(KeyEvent e){
                 // TODO: implement this method if you need it
